@@ -15,9 +15,9 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _pickAvatar() async {
-    final pickedFile = await ImagePicker().pickImage(source: ImageSource.gallery);
+    final pickedFile = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 50);
     if (pickedFile != null) {
-      authController.updateAvatar(pickedFile.path);
+      await authController.updateAvatar(pickedFile.path);
     }
   }
 
@@ -78,6 +78,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  ImageProvider _getAvatarProvider() {
+    if (authController.currentUser?.avatarPath != null) {
+      final file = File('${authController.appDocPath}/${authController.currentUser!.avatarPath}');
+      if (file.existsSync()) return FileImage(file);
+    }
+    return NetworkImage('https://ui-avatars.com/api/?name=${authController.currentUser?.name.replaceAll(' ', '+') ?? 'U'}&background=F8FAFC&color=0F172A&size=200&format=png');
+  }
+
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
@@ -110,13 +118,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             final savedNews = newsController.savedNews;
             final likedNews = newsController.likedNews;
 
-            ImageProvider avatarProvider;
-            if (user?.avatarPath != null && user!.avatarPath!.isNotEmpty) {
-              avatarProvider = FileImage(File(user.avatarPath!));
-            } else {
-              avatarProvider = NetworkImage('https://ui-avatars.com/api/?name=${user?.name.replaceAll(' ', '+') ?? 'U'}&background=random&size=200&format=png');
-            }
-
             return NestedScrollView(
               headerSliverBuilder: (context, innerBoxIsScrolled) {
                 return [
@@ -132,7 +133,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 CircleAvatar(
                                   radius: 50,
                                   backgroundColor: Colors.grey[200],
-                                  backgroundImage: avatarProvider,
+                                  backgroundImage: _getAvatarProvider(),
                                 ),
                                 Positioned(
                                   bottom: 0,

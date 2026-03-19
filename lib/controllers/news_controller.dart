@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/news_model.dart';
+import '../models/notification_model.dart';
 import '../services/news_service.dart';
 
 class NewsController extends ChangeNotifier {
@@ -9,6 +10,7 @@ class NewsController extends ChangeNotifier {
   List<NewsModel> savedNewsList = [];
   List<NewsModel> createdNewsList = [];
   List<NewsModel> likedNewsList = [];
+  List<NotificationModel> notifications = [];
 
   bool isLoading = false;
   bool hasMore = true;
@@ -18,7 +20,18 @@ class NewsController extends ChangeNotifier {
   void setUser(String userId) {
     if (_currentUserId != userId) {
       _currentUserId = userId;
+      _registerUser(userId);
       _init();
+    }
+  }
+
+  Future<void> _registerUser(String userId) async {
+    if (userId.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    List<String> users = prefs.getStringList('global_registered_users') ?? [];
+    if (!users.contains(userId)) {
+      users.add(userId);
+      await prefs.setStringList('global_registered_users', users);
     }
   }
 
@@ -27,6 +40,8 @@ class NewsController extends ChangeNotifier {
     news.clear();
     savedNewsList.clear();
     likedNewsList.clear();
+    createdNewsList.clear();
+    notifications.clear();
     page = 1;
     hasMore = true;
     notifyListeners();
@@ -40,17 +55,37 @@ class NewsController extends ChangeNotifier {
     loadNews(isRefresh: true);
   }
 
+  int get unreadNotificationsCount => notifications.where((n) => !n.isRead).length;
+
+  void markNotificationsAsRead() {
+    bool changed = false;
+    for (int i = 0; i < notifications.length; i++) {
+      if (!notifications[i].isRead) {
+        notifications[i] = notifications[i].copyWith(isRead: true);
+        changed = true;
+      }
+    }
+    if (changed) {
+      _saveLocalData();
+      notifyListeners();
+    }
+  }
+
   Future<void> _loadLocalData() async {
     final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
 
     final savedStr = prefs.getStringList('saved_news_$_currentUserId') ?? [];
     savedNewsList = savedStr.map((e) => NewsModel.fromJson(jsonDecode(e))).toList();
 
-    final createdStr = prefs.getStringList('created_news') ?? [];
+    final createdStr = prefs.getStringList('global_created_news') ?? [];
     createdNewsList = createdStr.map((e) => NewsModel.fromJson(jsonDecode(e))).toList();
 
     final likedStr = prefs.getStringList('liked_news_$_currentUserId') ?? [];
     likedNewsList = likedStr.map((e) => NewsModel.fromJson(jsonDecode(e))).toList();
+
+    final notifStr = prefs.getStringList('notifications_$_currentUserId') ?? [];
+    notifications = notifStr.map((e) => NotificationModel.fromJson(jsonDecode(e))).toList();
 
     notifyListeners();
   }
@@ -62,18 +97,47 @@ class NewsController extends ChangeNotifier {
     await prefs.setStringList('saved_news_$_currentUserId', savedStr);
 
     final createdStr = createdNewsList.map((e) => jsonEncode(e.toJson())).toList();
-    await prefs.setStringList('created_news', createdStr);
+    await prefs.setStringList('global_created_news', createdStr);
 
     final likedStr = likedNewsList.map((e) => jsonEncode(e.toJson())).toList();
     await prefs.setStringList('liked_news_$_currentUserId', likedStr);
+
+    final notifStr = notifications.map((e) => jsonEncode(e.toJson())).toList();
+    await prefs.setStringList('notifications_$_currentUserId', notifStr);
+  }
+
+  Future<void> _sendNotificationToUser(String targetUserId, String title, String message) async {
+    if (targetUserId.isEmpty) return;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.reload();
+
+      final newNotif = NotificationModel(
+        id: '${DateTime.now().millisecondsSinceEpoch}_$targetUserId',
+        title: title,
+        message: message,
+        date: DateTime.now(),
+      );
+
+      final key = 'notifications_$targetUserId';
+      final notifStr = prefs.getStringList(key) ?? [];
+      final notifList = notifStr.map((e) => NotificationModel.fromJson(jsonDecode(e))).toList();
+
+      notifList.insert(0, newNotif);
+      await prefs.setStringList(key, notifList.map((e) => jsonEncode(e.toJson())).toList());
+
+      if (targetUserId == _currentUserId) {
+        notifications = notifList;
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint("Ошибка отправки уведомления: $e");
+    }
   }
 
   List<NewsModel> get savedNews => savedNewsList;
-
-  List<NewsModel> getUserNews(String userId) {
-    return createdNewsList.where((n) => n.authorId == userId).toList();
-  }
-
+  List<NewsModel> getUserNews(String userId) => createdNewsList.where((n) => n.authorId == userId).toList();
   List<NewsModel> get likedNews => likedNewsList;
 
   int get totalLikesReceived {
@@ -127,61 +191,121 @@ class NewsController extends ChangeNotifier {
     }
   }
 
-  void toggleBookmark(int id) {
+  Future<void> toggleBookmark(int id) async {
     final index = news.indexWhere((n) => n.id == id);
-    if (index != -1) {
-      final current = news[index];
-      final isNowSaved = !current.isSaved;
+    if (index == -1) return;
 
-      news[index] = current.copyWith(isSaved: isNowSaved);
+    final current = news[index];
+    final isNowSaved = !current.isSaved;
 
-      if (isNowSaved) {
-        savedNewsList.add(news[index]);
-      } else {
-        savedNewsList.removeWhere((n) => n.id == id);
-      }
+    news[index] = current.copyWith(isSaved: isNowSaved);
+
+    if (isNowSaved) {
+      savedNewsList.add(news[index]);
     } else {
       savedNewsList.removeWhere((n) => n.id == id);
     }
 
-    _saveLocalData();
     notifyListeners();
+
+    if (isNowSaved && current.authorId != _currentUserId && current.authorId.isNotEmpty) {
+      await _sendNotificationToUser(
+        current.authorId,
+        'Пост в закладках 📌',
+        'Ваша публикация "${current.title}" была добавлена в сохраненное.',
+      );
+    }
+
+    await _saveLocalData();
   }
 
-  void toggleLike(int id) {
+  Future<void> toggleLike(int id) async {
     final index = news.indexWhere((n) => n.id == id);
-    if (index != -1) {
-      final current = news[index];
-      final isNowLiked = !current.isLiked;
+    if (index == -1) return;
 
-      news[index] = current.copyWith(
-        isLiked: isNowLiked,
-        likes: isNowLiked ? current.likes + 1 : current.likes - 1,
-      );
+    final current = news[index];
+    final isNowLiked = !current.isLiked;
 
-      if (isNowLiked) {
-        likedNewsList.add(news[index]);
-      } else {
-        likedNewsList.removeWhere((n) => n.id == id);
-      }
+    news[index] = current.copyWith(
+      isLiked: isNowLiked,
+      likes: isNowLiked ? current.likes + 1 : current.likes - 1,
+    );
 
-      final createdIndex = createdNewsList.indexWhere((n) => n.id == id);
-      if (createdIndex != -1) {
-        createdNewsList[createdIndex] = createdNewsList[createdIndex].copyWith(
-          likes: news[index].likes,
-        );
-      }
+    if (isNowLiked) {
+      likedNewsList.add(news[index]);
     } else {
       likedNewsList.removeWhere((n) => n.id == id);
     }
 
+    final createdIndex = createdNewsList.indexWhere((n) => n.id == id);
+    if (createdIndex != -1) {
+      createdNewsList[createdIndex] = createdNewsList[createdIndex].copyWith(
+        likes: news[index].likes,
+      );
+    }
+
+    notifyListeners();
+
+    if (isNowLiked && current.authorId != _currentUserId && current.authorId.isNotEmpty) {
+      await _sendNotificationToUser(
+        current.authorId,
+        'Новый лайк! ❤️',
+        'Пользователям понравилась ваша публикация "${current.title}".',
+      );
+    }
+
+    await _saveLocalData();
+  }
+
+  Future<void> addNews(NewsModel newNews) async {
+    createdNewsList.insert(0, newNews);
+    news.insert(0, newNews);
+    await _saveLocalData();
+    notifyListeners();
+
+    await _sendNotificationToUser(
+        _currentUserId,
+        'Успешная публикация',
+        'Ваша новость "${newNews.title}" успешно опубликована.'
+    );
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    List<String> registeredUsers = prefs.getStringList('global_registered_users') ?? [];
+
+    for (String targetUserId in registeredUsers) {
+      if (targetUserId != _currentUserId) {
+        await _sendNotificationToUser(
+          targetUserId,
+          'Новая публикация',
+          'Пользователь ${newNews.author} опубликовал(а) новость "${newNews.title}".',
+        );
+      }
+    }
+  }
+
+  void updateNews(NewsModel updatedNews) {
+    int idx = news.indexWhere((n) => n.id == updatedNews.id);
+    if (idx != -1) news[idx] = updatedNews;
+
+    idx = createdNewsList.indexWhere((n) => n.id == updatedNews.id);
+    if (idx != -1) createdNewsList[idx] = updatedNews;
+
+    idx = savedNewsList.indexWhere((n) => n.id == updatedNews.id);
+    if (idx != -1) savedNewsList[idx] = updatedNews;
+
+    idx = likedNewsList.indexWhere((n) => n.id == updatedNews.id);
+    if (idx != -1) likedNewsList[idx] = updatedNews;
+
     _saveLocalData();
     notifyListeners();
   }
 
-  void addNews(NewsModel newNews) {
-    createdNewsList.insert(0, newNews);
-    news.insert(0, newNews);
+  void deleteNews(int id) {
+    news.removeWhere((n) => n.id == id);
+    createdNewsList.removeWhere((n) => n.id == id);
+    savedNewsList.removeWhere((n) => n.id == id);
+    likedNewsList.removeWhere((n) => n.id == id);
     _saveLocalData();
     notifyListeners();
   }

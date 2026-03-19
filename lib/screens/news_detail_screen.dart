@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:share_plus/share_plus.dart';
 import '../controllers/news_controller.dart';
+import '../controllers/auth_controller.dart';
 import '../models/news_model.dart';
+import 'edit_news_screen.dart';
 
 class NewsDetailScreen extends StatelessWidget {
   final int newsId;
@@ -20,7 +22,16 @@ class NewsDetailScreen extends StatelessWidget {
     }
   }
 
-  Widget _buildGlassButton(IconData icon, VoidCallback onTap, {Color? color}) {
+  ImageProvider _getAvatarProvider(NewsModel news) {
+    if (news.authorId == authController.currentUser?.id && authController.currentUser?.avatarPath != null) {
+      final file = File('${authController.appDocPath}/${authController.currentUser!.avatarPath}');
+      if (file.existsSync()) return FileImage(file);
+    }
+    return CachedNetworkImageProvider(
+        'https://ui-avatars.com/api/?name=${news.author.replaceAll(' ', '+')}&background=F8FAFC&color=0F172A&size=150&format=png');
+  }
+
+  Widget _buildGlassButton(Widget child, VoidCallback onTap) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(24),
       child: BackdropFilter(
@@ -31,11 +42,48 @@ class NewsDetailScreen extends StatelessWidget {
             onTap: onTap,
             child: Padding(
               padding: const EdgeInsets.all(12),
-              child: Icon(icon, color: color ?? Colors.white, size: 24),
+              child: child,
             ),
           ),
         ),
       ),
+    );
+  }
+
+  void _showActionMenu(BuildContext context, NewsModel news) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))),
+              const SizedBox(height: 12),
+              ListTile(
+                leading: const Icon(Icons.edit_rounded, color: Color(0xFF0F172A)),
+                title: const Text('Редактировать', style: TextStyle(fontWeight: FontWeight.w700)),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => EditNewsScreen(news: news)));
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_rounded, color: Colors.redAccent),
+                title: const Text('Удалить', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.redAccent)),
+                onTap: () {
+                  newsController.deleteNews(news.id);
+                  Navigator.pop(context);
+                  Navigator.pop(context);
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -45,6 +93,7 @@ class NewsDetailScreen extends StatelessWidget {
       animation: newsController,
       builder: (context, child) {
         final news = newsController.news.firstWhere((n) => n.id == newsId, orElse: () => newsController.news.first);
+        final isAuthor = news.authorId == authController.currentUser?.id;
 
         return Scaffold(
           backgroundColor: Colors.white,
@@ -61,13 +110,17 @@ class NewsDetailScreen extends StatelessWidget {
                 title: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    _buildGlassButton(Icons.arrow_back_rounded, () => Navigator.pop(context)),
+                    _buildGlassButton(const Icon(Icons.arrow_back_rounded, color: Colors.white, size: 24), () => Navigator.pop(context)),
                     Row(
                       children: [
-                        _buildGlassButton(Icons.ios_share_rounded, () => Share.share('${news.title}\n\n${news.description}')),
+                        if (isAuthor) ...[
+                          _buildGlassButton(const Icon(Icons.more_horiz_rounded, color: Colors.white, size: 24), () => _showActionMenu(context, news)),
+                          const SizedBox(width: 12),
+                        ],
+                        _buildGlassButton(const Icon(Icons.ios_share_rounded, color: Colors.white, size: 24), () => Share.share('${news.title}\n\n${news.description}')),
                         const SizedBox(width: 12),
                         _buildGlassButton(
-                          news.isSaved ? Icons.bookmark_rounded : Icons.bookmark_outline_rounded,
+                          Icon(news.isSaved ? Icons.bookmark_rounded : Icons.bookmark_outline_rounded, color: Colors.white, size: 24),
                               () => newsController.toggleBookmark(news.id),
                         ),
                       ],
@@ -159,8 +212,7 @@ class NewsDetailScreen extends StatelessWidget {
                               ),
                               child: CircleAvatar(
                                 radius: 24,
-                                backgroundImage: CachedNetworkImageProvider(
-                                    'https://ui-avatars.com/api/?name=${news.author.replaceAll(' ', '+')}&background=F8FAFC&color=0F172A&size=150&format=png'),
+                                backgroundImage: _getAvatarProvider(news),
                               ),
                             ),
                             const SizedBox(width: 16),
@@ -172,7 +224,7 @@ class NewsDetailScreen extends StatelessWidget {
                                   style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
                                 ),
                                 const SizedBox(height: 2),
-                                const Text('Автор редакции', style: TextStyle(fontSize: 14, color: Color(0xFF64748B))),
+                                Text(isAuthor ? 'Автор' : 'Автор редакции', style: const TextStyle(fontSize: 14, color: Color(0xFF64748B))),
                               ],
                             ),
                           ],

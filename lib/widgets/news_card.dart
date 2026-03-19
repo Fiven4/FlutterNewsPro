@@ -6,6 +6,7 @@ import 'package:shimmer/shimmer.dart';
 import '../models/news_model.dart';
 import '../screens/news_detail_screen.dart';
 import '../controllers/news_controller.dart';
+import '../controllers/auth_controller.dart';
 
 class NewsCard extends StatelessWidget {
   final NewsModel news;
@@ -43,6 +44,15 @@ class NewsCard extends StatelessWidget {
         fit: BoxFit.cover,
       );
     }
+  }
+
+  ImageProvider _getAvatarProvider() {
+    if (news.authorId == authController.currentUser?.id && authController.currentUser?.avatarPath != null) {
+      final file = File('${authController.appDocPath}/${authController.currentUser!.avatarPath}');
+      if (file.existsSync()) return FileImage(file);
+    }
+    return CachedNetworkImageProvider(
+        'https://ui-avatars.com/api/?name=${news.author.replaceAll(' ', '+')}&background=F1F5F9&color=0F172A&format=png');
   }
 
   @override
@@ -191,8 +201,7 @@ class NewsCard extends StatelessWidget {
                                   ),
                                   child: CircleAvatar(
                                     radius: 18,
-                                    backgroundImage: CachedNetworkImageProvider(
-                                        'https://ui-avatars.com/api/?name=${news.author.replaceAll(' ', '+')}&background=F1F5F9&color=0F172A&format=png'),
+                                    backgroundImage: _getAvatarProvider(),
                                   ),
                                 ),
                                 const SizedBox(width: 12),

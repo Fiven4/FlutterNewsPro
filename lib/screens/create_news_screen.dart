@@ -28,7 +28,7 @@ class _CreateNewsScreenState extends State<CreateNewsScreen> {
     }
   }
 
-  void _publish() {
+  Future<void> _publish() async {
     if (_titleController.text.isEmpty || _contentController.text.isEmpty || _imageFile == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Заполните все поля и выберите фото')),
@@ -36,12 +36,15 @@ class _CreateNewsScreenState extends State<CreateNewsScreen> {
       return;
     }
 
+    final fileName = 'news_${DateTime.now().millisecondsSinceEpoch}.png';
+    final savedImage = await _imageFile!.copy('${authController.appDocPath}/$fileName');
+
     final newNews = NewsModel(
       id: DateTime.now().millisecondsSinceEpoch,
       title: _titleController.text,
       description: _descController.text,
       content: _contentController.text,
-      imageUrl: _imageFile!.path,
+      imageUrl: savedImage.path,
       author: authController.currentUser?.name ?? 'Пользователь',
       authorId: authController.currentUser?.id ?? '1',
       category: _category,
@@ -52,7 +55,7 @@ class _CreateNewsScreenState extends State<CreateNewsScreen> {
     );
 
     newsController.addNews(newNews);
-    Navigator.pop(context);
+    if (mounted) Navigator.pop(context);
   }
 
   @override

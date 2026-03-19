@@ -32,26 +32,82 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
   void _showNotifications() {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (context) {
-        return Container(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))),
-              const SizedBox(height: 24),
-              const Text('Уведомления', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 24),
-              Icon(Icons.notifications_active_outlined, size: 64, color: Colors.grey[400]),
-              const SizedBox(height: 16),
-              Text('У вас пока нет новых уведомлений', style: TextStyle(color: Colors.grey[600], fontSize: 16)),
-              const SizedBox(height: 24),
-            ],
-          ),
+        return AnimatedBuilder(
+          animation: newsController,
+          builder: (context, child) {
+            final notifications = newsController.notifications;
+            return DraggableScrollableSheet(
+              initialChildSize: 0.6,
+              minChildSize: 0.4,
+              maxChildSize: 0.9,
+              expand: false,
+              builder: (context, scrollController) {
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  child: Column(
+                    children: [
+                      Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))),
+                      const SizedBox(height: 24),
+                      const Text('Уведомления', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 16),
+                      if (notifications.isEmpty)
+                        Expanded(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.notifications_active_outlined, size: 64, color: Colors.grey[400]),
+                              const SizedBox(height: 16),
+                              Text('У вас пока нет новых уведомлений', style: TextStyle(color: Colors.grey[600], fontSize: 16)),
+                            ],
+                          ),
+                        )
+                      else
+                        Expanded(
+                          child: ListView.separated(
+                            controller: scrollController,
+                            physics: const BouncingScrollPhysics(),
+                            itemCount: notifications.length,
+                            separatorBuilder: (_, __) => const Divider(height: 1),
+                            itemBuilder: (context, index) {
+                              final notif = notifications[index];
+                              return ListTile(
+                                contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                                leading: CircleAvatar(
+                                  backgroundColor: notif.isRead ? Colors.grey[200] : const Color(0xFFE2E8F0),
+                                  child: Icon(Icons.notifications, color: notif.isRead ? Colors.grey[500] : const Color(0xFF0F172A)),
+                                ),
+                                title: Text(
+                                  notif.title,
+                                  style: TextStyle(
+                                    fontWeight: notif.isRead ? FontWeight.w500 : FontWeight.w800,
+                                    color: const Color(0xFF0F172A),
+                                  ),
+                                ),
+                                subtitle: Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text(
+                                    notif.message,
+                                    style: TextStyle(color: Colors.grey[600]),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
         );
       },
-    );
+    ).whenComplete(() {
+      newsController.markNotificationsAsRead();
+    });
   }
 
   @override
@@ -66,9 +122,35 @@ class _NewsFeedScreenState extends State<NewsFeedScreen> {
               showSearch(context: context, delegate: NewsSearchDelegate());
             },
           ),
-          IconButton(
-            icon: const Icon(Icons.notifications_none),
-            onPressed: _showNotifications,
+          AnimatedBuilder(
+            animation: newsController,
+            builder: (context, child) {
+              return Stack(
+                alignment: Alignment.center,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.notifications_none),
+                    onPressed: _showNotifications,
+                  ),
+                  if (newsController.unreadNotificationsCount > 0)
+                    Positioned(
+                      right: 12,
+                      top: 12,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.redAccent,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Text(
+                          '${newsController.unreadNotificationsCount}',
+                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
         ],
       ),
