@@ -97,11 +97,13 @@ lib/
 ├── services/    # Работа с внешними данными (API mock, Local storage)
 ├── widgets/     # Переиспользуемые UI-компоненты
 └── main.dart    # Точка входа и конфигурация приложения
+```
+
+
 ## 🚀 Установка и запуск
 Для запуска проекта вам потребуется установленный Flutter SDK и настроенный эмулятор (Android/iOS) или подключенное физическое устройство.
 
 ```text
-
 # 1. Клонирование репозитория
 git clone [https://github.com/your-username/news-app-flutter.git](https://github.com/your-username/news-app-flutter.git)
 
@@ -115,5 +117,3 @@ flutter pub get
 # 4. Запуск приложения в debug-режиме
 flutter run
 ```
-
-
